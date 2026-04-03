@@ -101,8 +101,7 @@ extern struct tee_ta_ctx_head tee_ctxes;
 extern struct mutex tee_ta_mutex;
 extern struct condvar tee_ta_init_cv;
 
-TEE_Result tee_ta_open_session(TEE_ErrorOrigin *err,
-			       struct tee_ta_session **sess,
+TEE_Result tee_ta_open_session(TEE_ErrorOrigin *err, uint32_t *sess_id,
 			       struct tee_ta_session_head *open_sessions,
 			       const TEE_UUID *uuid,
 			       const TEE_Identity *clnt_id,
@@ -128,7 +127,7 @@ bool tee_ta_session_is_cancelled(struct tee_ta_session *s, TEE_Time *curr_time);
  * Returns:
  *        TEE_Result
  *---------------------------------------------------------------------------*/
-TEE_Result tee_ta_close_session(struct tee_ta_session *sess,
+TEE_Result tee_ta_close_session(uint32_t id,
 				struct tee_ta_session_head *open_sessions,
 				const TEE_Identity *clnt_id);
 

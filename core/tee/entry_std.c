@@ -365,7 +365,7 @@ static void entry_open_session(struct optee_msg_arg *arg, uint32_t num_params)
 {
 	TEE_Result res = TEE_ERROR_GENERIC;
 	TEE_ErrorOrigin err_orig = TEE_ORIGIN_TEE;
-	struct tee_ta_session *s = NULL;
+	uint32_t sess_id = 0;
 	TEE_Identity clnt_id = { };
 	TEE_UUID uuid = { };
 	struct tee_ta_param param = { };
@@ -382,10 +382,11 @@ static void entry_open_session(struct optee_msg_arg *arg, uint32_t num_params)
 	if (res != TEE_SUCCESS)
 		goto cleanup_shm_refs;
 
-	res = tee_ta_open_session(&err_orig, &s, &tee_open_sessions, &uuid,
-				  &clnt_id, TEE_TIMEOUT_INFINITE, &param);
-	if (res != TEE_SUCCESS)
-		s = NULL;
+	res = tee_ta_open_session(&err_orig, &sess_id, &tee_open_sessions,
+				  &uuid, &clnt_id, TEE_TIMEOUT_INFINITE,
+				  &param);
+	if (res)
+		sess_id = 0;
 	copy_out_param(&param, num_params - num_meta, arg->params + num_meta,
 		       saved_attr);
 
@@ -401,18 +402,14 @@ cleanup_shm_refs:
 	cleanup_shm_refs(saved_attr, &param, num_params - num_meta);
 
 out:
-	if (s)
-		arg->session = s->id;
-	else
-		arg->session = 0;
+	arg->session = sess_id;
 	arg->ret = res;
 	arg->ret_origin = err_orig;
 }
 
 static void entry_close_session(struct optee_msg_arg *arg, uint32_t num_params)
 {
-	TEE_Result res;
-	struct tee_ta_session *s;
+	TEE_Result res = TEE_SUCCESS;
 
 	if (num_params) {
 		res = TEE_ERROR_BAD_PARAMETERS;
@@ -422,8 +419,8 @@ static void entry_close_session(struct optee_msg_arg *arg, uint32_t num_params)
 	plat_prng_add_jitter_entropy(CRYPTO_RNG_SRC_JITTER_SESSION,
 				     &session_pnum);
 
-	s = tee_ta_find_session(arg->session, &tee_open_sessions);
-	res = tee_ta_close_session(s, &tee_open_sessions, NSAPP_IDENTITY);
+	res = tee_ta_close_session(arg->session, &tee_open_sessions,
+				   NSAPP_IDENTITY);
 out:
 	arg->ret = res;
 	arg->ret_origin = TEE_ORIGIN_TEE;
