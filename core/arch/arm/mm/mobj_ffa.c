@@ -230,7 +230,7 @@ struct mobj_ffa *mobj_ffa_sel1_spmc_new(uint64_t cookie,
 		m = ffa_shm_new(num_pages);
 		break;
 	case MOBJ_USE_CASE_SEC_VIDEO_PLAY:
-	case MOBJ_USE_CASE_TRUSED_UI:
+	case MOBJ_USE_CASE_TRUSTED_UI:
 		m = ffa_prm_new(num_pages, use_case);
 		break;
 	default:
@@ -429,7 +429,7 @@ void mobj_ffa_spmc_delete(struct mobj_ffa *mf)
 TEE_Result mobj_ffa_add_pages_at(struct mobj_ffa *mf, unsigned int *idx,
 				 paddr_t pa, unsigned int num_pages)
 {
-	size_t tot_page_count = tot_page_count = get_page_count(mf);
+	size_t tot_page_count = get_page_count(mf);
 	unsigned int n = 0;
 
 	if (ADD_OVERFLOW(*idx, num_pages, &n) || n > tot_page_count)
@@ -449,11 +449,11 @@ TEE_Result mobj_ffa_add_pages_at(struct mobj_ffa *mf, unsigned int *idx,
 
 		if (!*idx)
 			mfr->pa = pa;
-		else if (mfr->pa != pa + *idx * SMALL_PAGE_SIZE)
+		else if (pa != mfr->pa + *idx * SMALL_PAGE_SIZE)
 			return TEE_ERROR_BAD_PARAMETERS;
 	}
 
-	(*idx) += n;
+	(*idx) += num_pages;
 
 	return TEE_SUCCESS;
 }

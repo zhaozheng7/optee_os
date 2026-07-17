@@ -2,7 +2,7 @@
 /*
  * Copyright (c) 2015-2023, Linaro Limited
  * Copyright (c) 2023, Arm Limited
- * Copyright (c) 2025, NVIDIA Corporation & AFFILIATES.
+ * Copyright (c) 2025-2026, NVIDIA Corporation & AFFILIATES.
  */
 
 #include <arm.h>
@@ -291,7 +291,7 @@ static void init_run_constructors(void)
 {
 	const vaddr_t *ctor;
 
-	for (ctor = &__ctor_list; ctor < &__ctor_end; ctor++)
+	for (ctor = __ctor_list; ctor < __ctor_end; ctor++)
 		((void (*)(void))(*ctor))();
 }
 
@@ -1450,8 +1450,8 @@ void __weak boot_save_args(unsigned long a0, unsigned long a1,
 			}
 			assert((unsigned long)fdt >= base);
 			assert((unsigned long)fdt <= base + size);
-			assert((unsigned long)fdt < VCORE_START_VA);
-			fdt_max_size = VCORE_START_VA - (unsigned long)fdt;
+			fdt_max_size = fdt_totalsize(fdt);
+			assert(fdt_max_size < CFG_DTB_MAX_SIZE);
 		}
 		init_manifest_dt(fdt, fdt_max_size);
 	} else {

@@ -138,7 +138,7 @@ CFG_OS_REV_REPORTS_GIT_SHA1 ?= y
 # with limited depth not including any tag, so there is really no guarantee
 # that TEE_IMPL_VERSION contains the major and minor revision numbers.
 CFG_OPTEE_REVISION_MAJOR ?= 4
-CFG_OPTEE_REVISION_MINOR ?= 9
+CFG_OPTEE_REVISION_MINOR ?= 10
 CFG_OPTEE_REVISION_EXTRA ?=
 
 # Trusted OS implementation version
@@ -476,6 +476,7 @@ CFG_CORE_BGET_BESTFIT ?= $(call cfg-one-enabled, CFG_WITH_PAGER CFG_LOCKDEP)
 # Uses a lot of memory, can't be enabled by default
 CFG_CORE_SANITIZE_UNDEFINED ?= n
 CFG_TA_SANITIZE_UNDEFINED ?= n
+CFG_SANITIZE_UNDEFINED_PANIC ?= n
 
 # Enable Kernel Address sanitizer, has a huge performance impact, uses a
 # lot of memory and need platform specific adaptations, can't be enabled by
@@ -812,6 +813,10 @@ $(call force,CFG_CORE_RWDATA_NOEXEC,y)
 CFG_VIRT_GUEST_COUNT ?= 2
 endif
 
+# Default length of hardware unique key, platforms can override it based on
+# their capabilities.
+CFG_HW_UNIQUE_KEY_LENGTH ?= 16
+
 # Enables backwards compatible derivation of RPMB and SSK keys
 CFG_CORE_HUK_SUBKEY_COMPAT ?= y
 
@@ -910,6 +915,13 @@ CFG_WITH_STMM_SP ?= n
 endif
 ifeq ($(CFG_WITH_STMM_SP),y)
 $(call force,CFG_ZLIB,y)
+# Number of 4KiB pages reserved for the StandaloneMm SP heap. The default
+# of 402 pages (~1.6MiB) is sufficient for minimal configurations, but
+# builds that include UEFI Secure Boot (AuthVariableLib + VarCheckPolicyLib
+# pulling in OpenSSL) typically require ~800 pages to avoid heap exhaustion
+# during StMM initialization. Values smaller than 402 are rejected at build
+# time as they are known to break existing configurations.
+CFG_STMM_HEAP_PAGE_COUNT ?= 402
 endif
 
 # When enabled checks that buffers passed to the GP Internal Core API
@@ -1161,6 +1173,21 @@ CFG_WDT_SM_HANDLER_ID ?= 0x82003D06
 # extension. When set to 'n', the plat_get_freq() function must be defined by
 # the platform code
 CFG_CORE_HAS_GENERIC_TIMER ?= y
+
+# When enabled, serial8250_uart_flush() limits its wait for the TX FIFO to
+# drain with a generic-timer timeout instead of spinning forever. This avoids
+# blocking a CPU when the UART is shared with (and contended by) the non-secure
+# world, at the cost of possibly dropping output if the timeout cuts short. Left
+# disabled by default so the flush keeps its guarantee that a log point was
+# emitted, which is relied on when debugging. Requires CFG_CORE_HAS_GENERIC_TIMER.
+CFG_8250_UART_FLUSH_TIMEOUT ?= n
+$(eval $(call cfg-depends-all,CFG_8250_UART_FLUSH_TIMEOUT,CFG_CORE_HAS_GENERIC_TIMER))
+
+# Upper limit (in microseconds) on how long serial8250_uart_flush() waits for the
+# TX FIFO to drain when CFG_8250_UART_FLUSH_TIMEOUT=y. The default suits a 16-byte
+# FIFO at common baud rates; raise it for slow consoles where a full FIFO takes
+# longer to drain than this bound, otherwise output may be cut short.
+CFG_8250_UART_FLUSH_TIMEOUT_US ?= 10000
 
 # Enable RTC API
 CFG_DRIVERS_RTC ?= n

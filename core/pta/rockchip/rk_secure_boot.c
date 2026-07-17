@@ -160,6 +160,7 @@ static TEE_Result burn_hash(uint32_t param_types,
 {
 	uint32_t new_hash[ROCKCHIP_OTP_RSA_HASH_SIZE] = {};
 	uint32_t old_hash[ROCKCHIP_OTP_RSA_HASH_SIZE] = {};
+	uint32_t zero[ROCKCHIP_OTP_RSA_HASH_SIZE] = { 0 };
 	char __maybe_unused str[HASH_STRING_SIZE] = {};
 	struct pta_rk_secure_boot_hash *hash = NULL;
 	TEE_Result res = TEE_SUCCESS;
@@ -190,12 +191,15 @@ static TEE_Result burn_hash(uint32_t param_types,
 				       ROCKCHIP_OTP_RSA_HASH_SIZE);
 	if (res)
 		return res;
-	if (memcmp(old_hash, new_hash, sizeof(new_hash))) {
+
+	/* If a hash is already set, ensure new hash matches the old hash. */
+	if (memcmp(old_hash, zero, sizeof(zero)) &&
+	    memcmp(old_hash, new_hash, sizeof(new_hash))) {
 		EMSG("Refusing to burn hash %s",
 		     otp_to_string(new_hash, str, sizeof(str)));
 		EMSG("OTP hash is %s",
 		     otp_to_string(old_hash, str, sizeof(str)));
-		return res;
+		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
 	/*
@@ -268,7 +272,7 @@ static TEE_Result lockdown_device(uint32_t param_types,
 		return TEE_SUCCESS;
 	}
 
-	status = ROCKCHIP_OTP_SECURE_BOOT_STATUS_ENABLE;
+	status |= ROCKCHIP_OTP_SECURE_BOOT_STATUS_ENABLE;
 
 	if (IS_ENABLED(CFG_RK_SECURE_BOOT_SIMULATION)) {
 		IMSG("Simulation mode: Skip writing status: %"PRIx32,
@@ -288,7 +292,7 @@ static TEE_Result lockdown_device(uint32_t param_types,
 				       ROCKCHIP_OTP_SECURE_BOOT_STATUS_SIZE);
 	if (res)
 		return res;
-	if (test_bit_mask(status, ROCKCHIP_OTP_SECURE_BOOT_STATUS_ENABLE)) {
+	if (!test_bit_mask(status, ROCKCHIP_OTP_SECURE_BOOT_STATUS_ENABLE)) {
 		EMSG("Failed to write secure boot status");
 		return TEE_ERROR_GENERIC;
 	}

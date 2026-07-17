@@ -1540,6 +1540,9 @@ static struct memory_map *init_mem_map(struct memory_map *mem_map,
 		for (n = 0; n < 3; n++) {
 			ba = arch_aslr_base_addr(start_addr, seed, n);
 			if (assign_mem_va(ba, mem_map) &&
+			    arch_mem_map_allows_user_va(mem_map,
+							id_map_start,
+							id_map_end) &&
 			    mem_map_add_id_map(mem_map, id_map_start,
 					       id_map_end)) {
 				offs = ba - start_addr;
@@ -1829,7 +1832,9 @@ enum teecore_memtypes core_mmu_get_type_by_pa(paddr_t pa)
 
 	/* VA spaces have no valid PAs in the memory map */
 	if (!map || map->type == MEM_AREA_RES_VASPACE ||
-	    map->type == MEM_AREA_SHM_VASPACE)
+	    map->type == MEM_AREA_SHM_VASPACE ||
+	    map->type == MEM_AREA_TEE_DYN_VASPACE ||
+	    map->type == MEM_AREA_NEX_DYN_VASPACE)
 		return MEM_AREA_MAXTYPE;
 	return map->type;
 }
@@ -2330,8 +2335,11 @@ TEE_Result core_mmu_remove_mapping(enum teecore_memtypes type, void *addr,
 	struct core_mmu_table_info tbl_info = { };
 	struct tee_mmap_region *res_map = NULL;
 	struct tee_mmap_region *map = NULL;
+	struct tee_mmap_region r = { };
 	paddr_t pa = virt_to_phys(addr);
 	size_t granule = 0;
+	vaddr_t tbl_span = 0;
+	vaddr_t end = 0;
 	ptrdiff_t i = 0;
 	paddr_t p = 0;
 	size_t l = 0;
@@ -2343,7 +2351,7 @@ TEE_Result core_mmu_remove_mapping(enum teecore_memtypes type, void *addr,
 	res_map = find_map_by_type(MEM_AREA_RES_VASPACE);
 	if (!res_map)
 		return TEE_ERROR_GENERIC;
-	if (!core_mmu_find_table(NULL, res_map->va, UINT_MAX, &tbl_info))
+	if (!core_mmu_find_table(NULL, map->va, UINT_MAX, &tbl_info))
 		return TEE_ERROR_GENERIC;
 	granule = BIT(tbl_info.shift);
 
@@ -2358,7 +2366,17 @@ TEE_Result core_mmu_remove_mapping(enum teecore_memtypes type, void *addr,
 	if (map->pa != p || map->size != l)
 		return TEE_ERROR_GENERIC;
 
-	clear_region(&tbl_info, map);
+	if (ADD_OVERFLOW(map->va, map->size, &end))
+		return TEE_ERROR_GENERIC;
+	for (r = *map; r.va < end; r.pa += r.size, r.va += r.size) {
+		if (!core_mmu_find_table(NULL, r.va, UINT_MAX, &tbl_info))
+			panic("can't find table for unmapping");
+
+		tbl_span = BIT64(tbl_info.shift) * tbl_info.num_entries;
+		r.size = MIN(tbl_span - (r.va - tbl_info.va_base),
+			     end - r.va);
+		clear_region(&tbl_info, &r);
+	}
 	tlbi_all();
 
 	/* If possible remove the va range from res_map */
@@ -2406,7 +2424,10 @@ void *core_mmu_add_mapping(enum teecore_memtypes type, paddr_t addr, size_t len)
 	struct memory_map *mem_map = &static_memory_map;
 	struct core_mmu_table_info tbl_info = { };
 	struct tee_mmap_region *map = NULL;
+	struct tee_mmap_region r = { };
 	size_t granule = 0;
+	vaddr_t tbl_span = 0;
+	vaddr_t end = 0;
 	paddr_t p = 0;
 	size_t l = 0;
 
@@ -2437,14 +2458,6 @@ void *core_mmu_add_mapping(enum teecore_memtypes type, paddr_t addr, size_t len)
 	if (map->size < l)
 		return NULL;
 
-	/*
-	 * Something is wrong, we can't fit the va range into the selected
-	 * table. The reserved va range is possibly missaligned with
-	 * granule.
-	 */
-	if (core_mmu_va2idx(&tbl_info, map->va + len) >= tbl_info.num_entries)
-		return NULL;
-
 	if (static_memory_map.count >= static_memory_map.alloc_count)
 		return NULL;
 
@@ -2461,7 +2474,17 @@ void *core_mmu_add_mapping(enum teecore_memtypes type, paddr_t addr, size_t len)
 	map = mem_map->map + mem_map->count;
 	mem_map->count++;
 
-	set_region(&tbl_info, map);
+	if (ADD_OVERFLOW(map->va, map->size, &end))
+		panic("VA overflow in add_mapping");
+	for (r = *map; r.va < end; r.pa += r.size, r.va += r.size) {
+		if (!core_mmu_find_table(NULL, r.va, UINT_MAX, &tbl_info))
+			panic("can't find table for mapping");
+
+		tbl_span = BIT64(tbl_info.shift) * tbl_info.num_entries;
+		r.size = MIN(tbl_span - (r.va - tbl_info.va_base),
+			     end - r.va);
+		set_region(&tbl_info, &r);
+	}
 
 	/* Make sure the new entry is visible before continuing. */
 	core_mmu_table_write_barrier();
